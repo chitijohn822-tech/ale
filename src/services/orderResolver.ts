@@ -5,10 +5,8 @@
  * All order-related operations go through this service.
  */
 
-import { mockStores, Store } from '../data/storesData';
-import { mockFoods, Food, getFoodsByStore } from './mockFoodService';
-import { mockClothes, Clothing, getClothesByStore } from './mockClothesService';
-import { mockHardware, Hardware, getHardwareByStore } from './mockHardwareService';
+import { Store, Product, StoreCategory } from '../data/storesData';
+import { fetchStores, fetchStoresByCategory, fetchProductsByStore } from './storeService';
 
 export type CategoryType = 'food' | 'clothes' | 'hardware';
 
@@ -38,24 +36,15 @@ export interface OrderStatus {
 /**
  * Get stores by category
  */
-export function getStoresByCategory(category: CategoryType): Store[] {
-  return mockStores.filter(store => store.category === category);
+export async function getStoresByCategory(category: CategoryType): Promise<Store[]> {
+  return fetchStoresByCategory(category as StoreCategory);
 }
 
 /**
- * Get products by store ID based on category
+ * Get products by store ID
  */
-export function getProductsByStore(storeId: string, category: CategoryType): Food[] | Clothing[] | Hardware[] {
-  switch (category) {
-    case 'food':
-      return getFoodsByStore(storeId);
-    case 'clothes':
-      return getClothesByStore(storeId);
-    case 'hardware':
-      return getHardwareByStore(storeId);
-    default:
-      return [];
-  }
+export async function getProductsByStore(storeId: string): Promise<Product[]> {
+  return fetchProductsByStore(storeId);
 }
 
 /**

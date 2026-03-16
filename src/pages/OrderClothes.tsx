@@ -3,62 +3,73 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ArrowLeft, ShoppingCart, Plus, X, CheckCircle } from 'lucide-react';
 import { useGlobalCart } from '../contexts/GlobalCartContext';
-import { getClothesByStore } from '../services/mockClothesService';
-import { mockStores } from '../data/storesData';
+import { fetchStoreById, fetchProductsByStore } from '../services/storeService';
+import { Product } from '../data/storesData';
 
 export const OrderClothes: React.FC = () => {
   const { storeId } = useParams<{ storeId: string }>();
   const navigate = useNavigate();
   const { cart, addToCart, removeFromCart } = useGlobalCart();
 
-  const [clothes, setClothes] = useState<any[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
   const [storeName, setStoreName] = useState('');
+  const [loading, setLoading] = useState(true);
   const [recentlyAdded, setRecentlyAdded] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!storeId) {
-      navigate('/shop', { state: { category: 'clothes' }, replace: true });
-      return;
-    }
+    const loadStoreData = async () => {
+      if (!storeId) {
+        navigate('/shop', { state: { category: 'clothes' }, replace: true });
+        return;
+      }
 
-    const store = mockStores.find(s => s.id === storeId);
-    if (!store) {
-      navigate('/shop', { state: { category: 'clothes' }, replace: true });
-      return;
-    }
+      setLoading(true);
+      try {
+        // Fetch store details
+        const store = await fetchStoreById(storeId);
+        if (!store) {
+          navigate('/shop', { state: { category: 'clothes' }, replace: true });
+          return;
+        }
 
-    setStoreName(store.name);
-    const storeClothes = getClothesByStore(storeId);
+        setStoreName(store.storeName);
 
-    if (storeClothes.length < 4) {
-      console.warn(`Store ${storeId} has less than 4 clothing items`);
-    }
+        // Fetch products for this store
+        const storeProducts = await fetchProductsByStore(storeId);
+        setProducts(storeProducts);
+      } catch (error) {
+        console.error('Error loading store data:', error);
+        navigate('/shop', { state: { category: 'clothes' }, replace: true });
+      } finally {
+        setLoading(false);
+      }
+    };
 
-    setClothes(storeClothes);
+    loadStoreData();
   }, [storeId, navigate]);
 
   const cartCount = cart.length;
   const cartTotal = cart.reduce((sum, item) => sum + item.price, 0);
 
-  const isInCart = (clothingId: string) => {
-    return cart.some(item => item.id.startsWith(clothingId));
+  const isInCart = (productId: string) => {
+    return cart.some(item => item.id.startsWith(productId));
   };
 
-  const handleAddToCart = (clothing: any) => {
+  const handleAddToCart = (product: Product) => {
     addToCart({
-      id: `${clothing.id}-${Date.now()}`,
-      storeId: clothing.storeId,
-      storeName: clothing.storeName,
-      name: clothing.name,
-      image: clothing.image,
-      price: clothing.price
+      id: `${product.id}-${Date.now()}`,
+      storeId: storeId!,
+      storeName: storeName,
+      name: product.name,
+      image: product.imageUrl,
+      price: product.price
     });
-    setRecentlyAdded(clothing.id);
+    setRecentlyAdded(product.id);
     setTimeout(() => setRecentlyAdded(null), 500);
   };
 
-  const handleRemoveFromCart = (clothingId: string) => {
-    const itemToRemove = cart.find(item => item.id.startsWith(clothingId));
+  const handleRemoveFromCart = (productId: string) => {
+    const itemToRemove = cart.find(item => item.id.startsWith(productId));
     if (itemToRemove) {
       removeFromCart(itemToRemove.id);
     }
@@ -89,7 +100,16 @@ export const OrderClothes: React.FC = () => {
     }
   };
 
-  if (!storeId || clothes.length === 0) {
+  if (loading) {
+    return (
+      <div className="flex flex-col h-screen items-center justify-center bg-gray-50">
+        <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+        <p className="text-gray-600">Loading products...</p>
+      </div>
+    );
+  }
+
+  if (!storeId || products.length === 0) {
     return (
       <div className="flex flex-col h-screen items-center justify-center bg-gray-50">
         <p className="text-gray-600 mb-4">Store not found or no items available</p>
@@ -145,13 +165,13 @@ export const OrderClothes: React.FC = () => {
         style={{ marginTop: '120px' }}
       >
         <div className="grid grid-cols-2 gap-4">
-          {clothes.map((clothing) => {
-            const isAdded = isInCart(clothing.id);
-            const wasJustAdded = recentlyAdded === clothing.id;
+          {products.map((product) => {
+            const isAdded = isInCart(product.id);
+            const wasJustAdded = recentlyAdded === product.id;
 
             return (
               <motion.div
-                key={clothing.id}
+                key={product.id}
                 variants={itemVariants}
                 whileTap={{ scale: 0.98 }}
                 className={`bg-white rounded-lg overflow-hidden shadow-sm transition-all ${
@@ -160,8 +180,8 @@ export const OrderClothes: React.FC = () => {
               >
                 <div className="relative h-32 bg-gray-200 overflow-hidden">
                   <img
-                    src={clothing.image}
-                    alt={clothing.name}
+                    src={product.imageUrl}
+                    alt={product.name}
                     className="w-full h-full object-cover"
                   />
                   {isAdded && (
@@ -177,22 +197,22 @@ export const OrderClothes: React.FC = () => {
 
                 <div className="p-3">
                   <h3 className="font-semibold text-gray-800 text-sm mb-1">
-                    {clothing.name}
+                    {product.name}
                   </h3>
                   <div className="flex items-center justify-between">
                     <span className="text-blue-600 font-bold text-sm">
-                      K{clothing.price}
+                      K{product.price}
                     </span>
                     {!isAdded ? (
                       <button
-                        onClick={() => handleAddToCart(clothing)}
+                        onClick={() => handleAddToCart(product)}
                         className="w-8 h-8 rounded-full flex items-center justify-center transition-colors bg-blue-500 text-white hover:bg-blue-600"
                       >
                         <Plus size={16} />
                       </button>
                     ) : (
                       <button
-                        onClick={() => handleRemoveFromCart(clothing.id)}
+                        onClick={() => handleRemoveFromCart(product.id)}
                         className="w-8 h-8 rounded-full flex items-center justify-center transition-colors bg-red-500 text-white hover:bg-red-600"
                       >
                         <X size={16} />

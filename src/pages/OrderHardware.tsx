@@ -3,62 +3,73 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ArrowLeft, ShoppingCart, Plus, X, CheckCircle } from 'lucide-react';
 import { useGlobalCart } from '../contexts/GlobalCartContext';
-import { getHardwareByStore } from '../services/mockHardwareService';
-import { mockStores } from '../data/storesData';
+import { fetchStoreById, fetchProductsByStore } from '../services/storeService';
+import { Product } from '../data/storesData';
 
 export const OrderHardware: React.FC = () => {
   const { storeId } = useParams<{ storeId: string }>();
   const navigate = useNavigate();
   const { cart, addToCart, removeFromCart } = useGlobalCart();
 
-  const [hardware, setHardware] = useState<any[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
   const [storeName, setStoreName] = useState('');
+  const [loading, setLoading] = useState(true);
   const [recentlyAdded, setRecentlyAdded] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!storeId) {
-      navigate('/shop', { state: { category: 'hardware' }, replace: true });
-      return;
-    }
+    const loadStoreData = async () => {
+      if (!storeId) {
+        navigate('/shop', { state: { category: 'hardware' }, replace: true });
+        return;
+      }
 
-    const store = mockStores.find(s => s.id === storeId);
-    if (!store) {
-      navigate('/shop', { state: { category: 'hardware' }, replace: true });
-      return;
-    }
+      setLoading(true);
+      try {
+        // Fetch store details
+        const store = await fetchStoreById(storeId);
+        if (!store) {
+          navigate('/shop', { state: { category: 'hardware' }, replace: true });
+          return;
+        }
 
-    setStoreName(store.name);
-    const storeHardware = getHardwareByStore(storeId);
+        setStoreName(store.storeName);
 
-    if (storeHardware.length < 4) {
-      console.warn(`Store ${storeId} has less than 4 hardware items`);
-    }
+        // Fetch products for this store
+        const storeProducts = await fetchProductsByStore(storeId);
+        setProducts(storeProducts);
+      } catch (error) {
+        console.error('Error loading store data:', error);
+        navigate('/shop', { state: { category: 'hardware' }, replace: true });
+      } finally {
+        setLoading(false);
+      }
+    };
 
-    setHardware(storeHardware);
+    loadStoreData();
   }, [storeId, navigate]);
 
   const cartCount = cart.length;
   const cartTotal = cart.reduce((sum, item) => sum + item.price, 0);
 
-  const isInCart = (hardwareId: string) => {
-    return cart.some(item => item.id.startsWith(hardwareId));
+  const isInCart = (productId: string) => {
+    return cart.some(item => item.id.startsWith(productId));
   };
 
-  const handleAddToCart = (item: any) => {
+  const handleAddToCart = (product: Product) => {
     addToCart({
-      id: `${item.id}-${Date.now()}`,
-      storeId: item.storeId,
-      storeName: item.storeName,
-      name: item.name,
-      image: item.image,
-      price: item.price
+      id: `${product.id}-${Date.now()}`,
+      storeId: storeId!,
+      storeName: storeName,
+      name: product.name,
+      image: product.imageUrl,
+      price: product.price
     });
-    setRecentlyAdded(item.id);
+    setRecentlyAdded(product.id);
     setTimeout(() => setRecentlyAdded(null), 500);
   };
 
-  const handleRemoveFromCart = (hardwareId: string) => {
-    const itemToRemove = cart.find(item => item.id.startsWith(hardwareId));
+  const handleRemoveFromCart = (productId: string) => {
+    const itemToRemove = cart.find(item => item.id.startsWith(productId));
     if (itemToRemove) {
       removeFromCart(itemToRemove.id);
     }
@@ -89,7 +100,16 @@ export const OrderHardware: React.FC = () => {
     }
   };
 
-  if (!storeId || hardware.length === 0) {
+  if (loading) {
+    return (
+      <div className="flex flex-col h-screen items-center justify-center bg-gray-50">
+        <div className="w-12 h-12 border-4 border-amber-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+        <p className="text-gray-600">Loading products...</p>
+      </div>
+    );
+  }
+
+  if (!storeId || products.length === 0) {
     return (
       <div className="flex flex-col h-screen items-center justify-center bg-gray-50">
         <p className="text-gray-600 mb-4">Store not found or no items available</p>
@@ -145,13 +165,13 @@ export const OrderHardware: React.FC = () => {
         style={{ marginTop: '120px' }}
       >
         <div className="grid grid-cols-2 gap-4">
-          {hardware.map((item) => {
-            const isAdded = isInCart(item.id);
-            const wasJustAdded = recentlyAdded === item.id;
+          {products.map((product) => {
+            const isAdded = isInCart(product.id);
+            const wasJustAdded = recentlyAdded === product.id;
 
             return (
               <motion.div
-                key={item.id}
+                key={product.id}
                 variants={itemVariants}
                 whileTap={{ scale: 0.98 }}
                 className={`bg-white rounded-lg overflow-hidden shadow-sm transition-all ${
@@ -160,8 +180,8 @@ export const OrderHardware: React.FC = () => {
               >
                 <div className="relative h-32 bg-gray-200 overflow-hidden">
                   <img
-                    src={item.image}
-                    alt={item.name}
+                    src={product.imageUrl}
+                    alt={product.name}
                     className="w-full h-full object-cover"
                   />
                   {isAdded && (
@@ -177,25 +197,22 @@ export const OrderHardware: React.FC = () => {
 
                 <div className="p-3">
                   <h3 className="font-semibold text-gray-800 text-sm mb-1">
-                    {item.name}
+                    {product.name}
                   </h3>
-                  {item.unit && (
-                    <p className="text-xs text-gray-500 mb-1">per {item.unit}</p>
-                  )}
                   <div className="flex items-center justify-between">
                     <span className="text-amber-600 font-bold text-sm">
-                      K{item.price}
+                      K{product.price}
                     </span>
                     {!isAdded ? (
                       <button
-                        onClick={() => handleAddToCart(item)}
+                        onClick={() => handleAddToCart(product)}
                         className="w-8 h-8 rounded-full flex items-center justify-center transition-colors bg-amber-500 text-white hover:bg-amber-600"
                       >
                         <Plus size={16} />
                       </button>
                     ) : (
                       <button
-                        onClick={() => handleRemoveFromCart(item.id)}
+                        onClick={() => handleRemoveFromCart(product.id)}
                         className="w-8 h-8 rounded-full flex items-center justify-center transition-colors bg-red-500 text-white hover:bg-red-600"
                       >
                         <X size={16} />

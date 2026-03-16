@@ -1,16 +1,36 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ArrowLeft, Search, Star, ChevronRight } from 'lucide-react';
-import { mockStores, Store, StoreCategory, getStoresByCategory } from '../data/storesData';
+import { Store, StoreCategory } from '../data/storesData';
+import { fetchStoresByCategory, isStoreOpen } from '../services/storeService';
 
 export const Shop: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchQuery, setSearchQuery] = useState('');
+  const [stores, setStores] = useState<Store[]>([]);
+  const [loading, setLoading] = useState(true);
   
   // Get category from navigation state, default to 'food'
   const category: StoreCategory = (location.state?.category as StoreCategory) || 'food';
+
+  // Fetch stores from Firestore
+  useEffect(() => {
+    const loadStores = async () => {
+      setLoading(true);
+      try {
+        const fetchedStores = await fetchStoresByCategory(category);
+        setStores(fetchedStores);
+      } catch (error) {
+        console.error('Error fetching stores:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadStores();
+  }, [category]);
 
   // Get page title based on category
   const getPageTitle = () => {
@@ -41,15 +61,13 @@ export const Shop: React.FC = () => {
   };
 
   const filteredStores = useMemo(() => {
-    const categoryStores = getStoresByCategory(category);
     if (!searchQuery.trim()) {
-      return categoryStores;
+      return stores;
     }
-    return categoryStores.filter(store =>
-      store.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      store.subcategory?.toLowerCase().includes(searchQuery.toLowerCase())
+    return stores.filter(store =>
+      store.storeName.toLowerCase().includes(searchQuery.toLowerCase())
     );
-  }, [searchQuery, category]);
+  }, [searchQuery, stores]);
 
   const containerVariants = {
     hidden: { opacity: 0 },
@@ -72,20 +90,26 @@ export const Shop: React.FC = () => {
   };
 
   const handleStoreClick = (store: Store) => {
-    switch (category) {
-      case 'food':
-        navigate(`/order-foodies/${store.id}`);
-        break;
-      case 'clothes':
-        navigate(`/order-clothes/${store.id}`);
-        break;
-      case 'hardware':
-        navigate(`/order-hardware/${store.id}`);
-        break;
-      default:
-        navigate(`/order-foodies/${store.id}`);
+    // Check if store is open
+    const { isOpen } = isStoreOpen(store.openingHours);
+    if (!isOpen) {
+      return; // Don't navigate if store is closed
     }
+
+    // Navigate to the single order page with store ID
+    navigate(`/order-foodies/${store.id}`);
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-green-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading stores...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white">
@@ -146,62 +170,83 @@ export const Shop: React.FC = () => {
             initial="hidden"
             animate="visible"
           >
-            {filteredStores.map((store) => (
-              <motion.button
-                key={store.id}
-                onClick={() => handleStoreClick(store)}
-                className="w-full bg-white rounded-2xl border border-gray-200 hover:border-green-300 transition-all overflow-hidden"
-                variants={itemVariants}
-                whileTap={{ scale: 0.98 }}
-                whileHover={{ y: -2, boxShadow: '0 8px 24px rgba(0,0,0,0.1)' }}
-              >
-                <div className="flex items-center space-x-4 p-4">
-                  {/* Store Image */}
-                  <div className="w-20 h-20 rounded-2xl bg-gray-200 overflow-hidden flex-shrink-0">
-                    {store.image_url ? (
-                      <img
-                        src={store.image_url}
-                        alt={store.name}
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <div className="w-full h-full bg-gradient-to-br from-gray-300 to-gray-400 flex items-center justify-center">
-                        <span className="text-2xl">🏪</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Store Info */}
-                  <div className="flex-1 text-left">
-                    <h3 className="font-bold text-lg text-gray-900 mb-1">{store.name}</h3>
-
-                    {/* Distance and Rating */}
-                    <div className="flex items-center space-x-4 text-sm text-gray-600 mb-2">
-                      <div className="flex items-center space-x-1">
-                        <span>📍</span>
-                        <span>{store.distance_km.toFixed(1)} km</span>
-                      </div>
-                      {store.rating && (
-                        <div className="flex items-center space-x-1">
-                          <Star size={14} className="text-yellow-500 fill-yellow-500" />
-                          <span>{store.rating} )</span>
+            {filteredStores.map((store) => {
+              const { isOpen, nextOpenTime } = isStoreOpen(store.openingHours);
+              
+              return (
+                <motion.button
+                  key={store.id}
+                  onClick={() => handleStoreClick(store)}
+                  className={`w-full bg-white rounded-2xl border border-gray-200 transition-all overflow-hidden ${
+                    isOpen 
+                      ? 'hover:border-green-300 cursor-pointer' 
+                      : 'opacity-50 cursor-not-allowed'
+                  }`}
+                  variants={itemVariants}
+                  whileTap={isOpen ? { scale: 0.98 } : {}}
+                  whileHover={isOpen ? { y: -2, boxShadow: '0 8px 24px rgba(0,0,0,0.1)' } : {}}
+                  disabled={!isOpen}
+                >
+                  <div className="flex items-center space-x-4 p-4">
+                    {/* Store Image */}
+                    <div className="w-20 h-20 rounded-2xl bg-gray-200 overflow-hidden flex-shrink-0 relative">
+                      {store.logo ? (
+                        <img
+                          src={store.logo}
+                          alt={store.storeName}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-full h-full bg-gradient-to-br from-gray-300 to-gray-400 flex items-center justify-center">
+                          <span className="text-2xl">🏪</span>
                         </div>
+                      )}
+                      {/* Open/Closed Badge */}
+                      <div className={`absolute top-1 right-1 px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                        isOpen 
+                          ? 'bg-green-500 text-white' 
+                          : 'bg-red-500 text-white'
+                      }`}>
+                        {isOpen ? 'OPEN' : 'CLOSED'}
+                      </div>
+                    </div>
+
+                    {/* Store Info */}
+                    <div className="flex-1 text-left">
+                      <h3 className="font-bold text-lg text-gray-900 mb-1">{store.storeName}</h3>
+
+                      {/* Distance and Rating */}
+                      <div className="flex items-center space-x-4 text-sm text-gray-600 mb-2">
+                        <div className="flex items-center space-x-1">
+                          <span>📍</span>
+                          <span>{store.distance_km ? `${store.distance_km.toFixed(1)} km` : '-- km'}</span>
+                        </div>
+                        {store.rating && (
+                          <div className="flex items-center space-x-1">
+                            <Star size={14} className="text-yellow-500 fill-yellow-500" />
+                            <span>{store.rating}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Delivery Time or Closed Status */}
+                      {isOpen ? (
+                        <p className="text-sm text-gray-600">{store.delivery_time || '-- min'}</p>
+                      ) : (
+                        <p className="text-sm text-red-600">
+                          {nextOpenTime ? `Opens ${nextOpenTime}` : 'Currently closed'}
+                        </p>
                       )}
                     </div>
 
-                    {/* Delivery Time */}
-                    {store.delivery_time && (
-                      <p className="text-sm text-gray-600">{store.delivery_time}</p>
-                    )}
+                    {/* Chevron */}
+                    <div className="text-gray-400">
+                      <ChevronRight size={24} />
+                    </div>
                   </div>
-
-                  {/* Chevron */}
-                  <div className="text-gray-400">
-                    <ChevronRight size={24} />
-                  </div>
-                </div>
-              </motion.button>
-            ))}
+                </motion.button>
+              );
+            })}
           </motion.div>
         ) : (
           <motion.div
