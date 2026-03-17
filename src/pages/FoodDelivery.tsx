@@ -184,16 +184,26 @@ export function FoodDelivery() {
     const selectedDeliveryMode = deliveryModes.find(m => m.id === selectedModeId);
     if (!selectedDeliveryMode) return;
 
+    // Get store info from routeData or cart
+    const storeId = routeData.storeId || cart[0]?.storeId || '';
+    const storeName = routeData.storeName || cart[0]?.storeName || '';
+    const storeAddress = routeData.storeAddress || cart[0]?.storeAddress || '';
+    const category = routeData.category || cart[0]?.category || 'food';
+
     navigate('/confirm-order', {
       state: {
-        orderType: 'food',
+        orderType: 'delivery',
+        type: category, // Category type for Firestore: food, clothes, hardware
         orderData: {
           deliveryMode: selectedDeliveryMode,
-          pickupAddress: routeData.pickupLocation || 'Current Location',
+          storeId: storeId,
+          storeName: storeName,
+          storeAddress: storeAddress,
+          pickupAddress: storeAddress || storeName || 'Store', // Use storeAddress as pickup
           destinationAddress: routeData.deliveryLocation || 'Destination',
           stops: stops || [],
           items: cart,
-          foodSubtotal: foodSubtotal,
+          subtotal: foodSubtotal,
           deliveryFee: deliveryFee,
           totalPrice: total
         }

@@ -1,9 +1,13 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 
+export type DeliveryCategory = 'food' | 'clothes' | 'hardware';
+
 export interface GlobalCartItem {
   id: string;
   storeId: string;
   storeName: string;
+  storeAddress: string;
+  category: DeliveryCategory;
   name: string;
   image: string;
   price: number;

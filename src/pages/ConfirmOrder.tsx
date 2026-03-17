@@ -7,8 +7,9 @@ import { useUserProfile } from '../hooks/useUserProfile';
 import { calculatePriceWithStops, getCarTypePrice } from '../utils/priceCalculation';
 import { useRideContext } from '../contexts/RideContext';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { database, auth } from '../config/firebase';
+import { database, auth, db } from '../config/firebase';
 import { ref, push, set } from 'firebase/database';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 
 interface ConfirmOrderProps {
   destination: string;
@@ -40,6 +41,7 @@ export const ConfirmOrder: React.FC<ConfirmOrderProps> = ({
 
   const {
     orderType = 'ride',
+    type = '', // Category type: 'food', 'clothes', 'hardware'
     orderData = {},
     serviceType,
     vehicle,
@@ -48,16 +50,18 @@ export const ConfirmOrder: React.FC<ConfirmOrderProps> = ({
     destinationAddress
   } = location.state || {};
 
-  const isFood = orderType === 'food';
+  const isDelivery = orderType === 'delivery';
+  const isFood = orderType === 'food'; // Legacy support
 
-  const finalDestination = isFood ? orderData.destinationAddress : destination;
-  const finalPickup = isFood ? orderData.pickupAddress : pickup;
-  const finalStops = isFood ? (orderData.stops || []) : stops;
-  const finalCarType = isFood ? orderData.deliveryMode?.label : carType;
-  const finalPrice = isFood ? orderData.totalPrice : price;
+  const isDeliveryOrFood = isDelivery || isFood;
+  const finalDestination = isDeliveryOrFood ? orderData.destinationAddress : destination;
+  const finalPickup = isDeliveryOrFood ? (orderData.storeAddress || orderData.pickupAddress) : pickup;
+  const finalStops = isDeliveryOrFood ? (orderData.stops || []) : stops;
+  const finalCarType = isDeliveryOrFood ? orderData.deliveryMode?.label : carType;
+  const finalPrice = isDeliveryOrFood ? orderData.totalPrice : price;
 
-  const priceCalculation = !isFood ? calculatePriceWithStops(pickup, destination, stops) : null;
-  const displayPrice = isFood ? finalPrice : (priceCalculation ? getCarTypePrice(priceCalculation.totalPrice, carType) : finalPrice);
+  const priceCalculation = !isDeliveryOrFood ? calculatePriceWithStops(pickup, destination, stops) : null;
+  const displayPrice = isDeliveryOrFood ? finalPrice : (priceCalculation ? getCarTypePrice(priceCalculation.totalPrice, carType) : finalPrice);
 
   const isService = serviceType && serviceType !== 'ride';
 
@@ -127,6 +131,57 @@ export const ConfirmOrder: React.FC<ConfirmOrderProps> = ({
     }
   };
 
+  const createDeliveryOrder = async () => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      throw new Error('User must be authenticated to place a delivery order');
+    }
+
+    const deliveryOrder = {
+      type: type || 'food', // Category: food, clothes, hardware
+      storeId: orderData.storeId || '',
+      storeName: orderData.storeName || '',
+      storeAddress: orderData.storeAddress || orderData.pickupAddress || '',
+      userId: currentUser.uid,
+      userName: currentUser.displayName || profile?.name || 'Unknown User',
+      userEmail: currentUser.email || profile?.email || '',
+      items: orderData.items || [],
+      subtotal: orderData.subtotal || orderData.foodSubtotal || 0,
+      deliveryFee: orderData.deliveryFee || 0,
+      total: orderData.totalPrice || 0,
+      status: 'pending',
+      driverId: null,
+      driverStatus: 'waiting',
+      prepTime: 15,
+      userLocation: {
+        lat: null,
+        lng: null
+      },
+      destinationAddress: orderData.destinationAddress || '',
+      stops: orderData.stops || [],
+      deliveryMode: orderData.deliveryMode || null,
+      createdAt: serverTimestamp()
+    };
+
+    // Save to Firestore 'orders' collection
+    const ordersRef = collection(db, 'orders');
+    const docRef = await addDoc(ordersRef, deliveryOrder);
+    const orderId = docRef.id;
+
+    localStorage.setItem('currentDeliveryOrderId', orderId);
+    localStorage.setItem('currentOrderType', 'delivery');
+
+    navigate('/waiting-for-driver', {
+      state: {
+        orderType: 'delivery',
+        requestId: orderId,
+        orderData: deliveryOrder
+      }
+    });
+
+    return orderId;
+  };
+
   const handleConfirmOrder = async () => {
     if (isLoading || isRideActive) {
       if (isRideActive) {
@@ -140,7 +195,11 @@ export const ConfirmOrder: React.FC<ConfirmOrderProps> = ({
     try {
       if (isService) {
         await confirmServiceRequest();
+      } else if (isDelivery) {
+        // Use the new createDeliveryOrder for all delivery types (food, clothes, hardware)
+        await createDeliveryOrder();
       } else if (isFood) {
+        // Legacy food order support - redirect to new delivery flow
         const foodOrder = {
           type: 'food',
           deliveryMode: orderData.deliveryMode,
@@ -284,6 +343,68 @@ export const ConfirmOrder: React.FC<ConfirmOrderProps> = ({
                 <div className="flex justify-between pt-2 border-t border-gray-200">
                   <span className="font-semibold text-gray-900">Total</span>
                   <span className="text-lg font-bold text-gray-900">R {vehicle?.price || 0}</span>
+                </div>
+              </div>
+            </>
+          ) : isDelivery ? (
+            <>
+              <div className="text-center">
+                <h2 className="text-2xl font-bold text-gray-900 mb-2">{orderData.deliveryMode?.label}</h2>
+                <p className="text-gray-600">{orderData.deliveryMode?.description}</p>
+                <p className="text-sm text-gray-500">{orderData.deliveryMode?.time}</p>
+              </div>
+
+              <div className="bg-gray-50 rounded-xl p-4">
+                <h3 className="font-semibold text-gray-900 mb-3">Delivery Details</h3>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">From:</span>
+                    <span className="text-gray-900 font-medium text-right max-w-[200px] truncate">
+                      {orderData.storeAddress || orderData.storeName || 'Store'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">To:</span>
+                    <span className="text-gray-900 font-medium text-right max-w-[200px] truncate">
+                      {orderData.destinationAddress}
+                    </span>
+                  </div>
+                  {orderData.stops && orderData.stops.length > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Stops:</span>
+                      <span className="text-gray-900 font-medium">{orderData.stops.length}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {orderData.items && orderData.items.length > 0 && (
+                <div className="bg-gray-50 rounded-xl p-4">
+                  <h3 className="font-semibold text-gray-900 mb-3">Items ({orderData.items.length})</h3>
+                  <div className="space-y-2 max-h-32 overflow-y-auto">
+                    {orderData.items.map((item: any, idx: number) => (
+                      <div key={idx} className="flex justify-between text-sm">
+                        <span className="text-gray-700">{item.name}</span>
+                        <span className="font-medium text-gray-900">R {item.price}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="bg-gray-50 rounded-xl p-4 space-y-2">
+                <h3 className="font-semibold text-gray-900 mb-3">Payment Summary</h3>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Subtotal</span>
+                  <span className="font-medium text-gray-900">R {orderData.subtotal || orderData.foodSubtotal || 0}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Delivery fee</span>
+                  <span className="font-medium text-gray-900">R {orderData.deliveryFee}</span>
+                </div>
+                <div className="flex justify-between pt-2 border-t border-gray-200">
+                  <span className="font-semibold text-gray-900">Total</span>
+                  <span className="text-lg font-bold text-gray-900">R {orderData.totalPrice}</span>
                 </div>
               </div>
             </>

@@ -10,6 +10,7 @@ export interface OpeningHours {
 export interface Store {
   id: string;
   storeName: string;
+  storeAddress: string;
   logo: string;
   rating: number;
   reviewCount?: number;

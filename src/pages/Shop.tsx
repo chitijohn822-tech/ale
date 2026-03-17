@@ -96,8 +96,15 @@ export const Shop: React.FC = () => {
       return; // Don't navigate if store is closed
     }
 
-    // Navigate to the single order page with store ID
-    navigate(`/order-foodies/${store.id}`);
+    // Navigate to the appropriate order page based on category
+    let orderPath = '/order-foodies';
+    if (category === 'clothes') {
+      orderPath = '/order-clothes';
+    } else if (category === 'hardware') {
+      orderPath = '/order-hardware';
+    }
+    
+    navigate(`${orderPath}/${store.id}`);
   };
 
   if (loading) {

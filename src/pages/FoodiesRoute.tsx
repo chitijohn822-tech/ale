@@ -228,8 +228,18 @@ export function FoodiesRoute() {
 
   const handleGoToDelivery = () => {
     // Save route data to localStorage before navigation
+    // Get store info from first cart item
+    const storeId = cart[0]?.storeId || '';
+    const storeName = cart[0]?.storeName || '';
+    const storeAddress = cart[0]?.storeAddress || '';
+    const category = cart[0]?.category || 'food';
+    
     const routeData = {
       deliveryLocation,
+      storeId,
+      storeName,
+      storeAddress,
+      category,
       stops: stops.map(stop => ({
         id: stop.id,
         address: stop.address,
@@ -240,6 +250,8 @@ export function FoodiesRoute() {
         id: item.id,
         storeId: item.storeId,
         storeName: item.storeName,
+        storeAddress: item.storeAddress,
+        category: item.category,
         name: item.name,
         image: item.image,
         price: item.price

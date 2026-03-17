@@ -13,6 +13,7 @@ export const OrderClothes: React.FC = () => {
 
   const [products, setProducts] = useState<Product[]>([]);
   const [storeName, setStoreName] = useState('');
+  const [storeAddress, setStoreAddress] = useState('');
   const [loading, setLoading] = useState(true);
   const [recentlyAdded, setRecentlyAdded] = useState<string | null>(null);
 
@@ -33,6 +34,7 @@ export const OrderClothes: React.FC = () => {
         }
 
         setStoreName(store.storeName);
+        setStoreAddress(store.storeAddress || '');
 
         // Fetch products for this store
         const storeProducts = await fetchProductsByStore(storeId);
@@ -60,6 +62,8 @@ export const OrderClothes: React.FC = () => {
       id: `${product.id}-${Date.now()}`,
       storeId: storeId!,
       storeName: storeName,
+      storeAddress: storeAddress,
+      category: 'clothes',
       name: product.name,
       image: product.imageUrl,
       price: product.price
