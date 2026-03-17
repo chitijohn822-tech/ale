@@ -133,18 +133,16 @@ export const ConfirmOrder: React.FC<ConfirmOrderProps> = ({
 
   const createDeliveryOrder = async () => {
     const currentUser = auth.currentUser;
-    if (!currentUser) {
-      throw new Error('User must be authenticated to place a delivery order');
-    }
+    // Guest checkout is allowed per Firestore rules (allow create: if true)
 
     const deliveryOrder = {
       type: type || 'food', // Category: food, clothes, hardware
       storeId: orderData.storeId || '',
       storeName: orderData.storeName || '',
       storeAddress: orderData.storeAddress || orderData.pickupAddress || '',
-      userId: currentUser.uid,
-      userName: currentUser.displayName || profile?.name || 'Unknown User',
-      userEmail: currentUser.email || profile?.email || '',
+      userId: currentUser?.uid || 'guest',
+      userName: currentUser?.displayName || profile?.name || 'Guest User',
+      userEmail: currentUser?.email || profile?.email || '',
       items: orderData.items || [],
       subtotal: orderData.subtotal || orderData.foodSubtotal || 0,
       deliveryFee: orderData.deliveryFee || 0,
