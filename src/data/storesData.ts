@@ -29,3 +29,4 @@ export interface Product {
   price: number;
   category?: string;
 }
+
